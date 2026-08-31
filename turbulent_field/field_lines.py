@@ -4,23 +4,34 @@ import matplotlib.pyplot as plt
 
 
 class PeriodicInterpolator:
+    """Linear interpolator for 3D cubes with periodic boundary conditions"""
     def __init__(self, r_cube, B_cube):
-        self.origin = r_cube[:, 0, 0, 0]
-        self.dx = r_cube[0, 1, 0, 0] - r_cube[0, 0, 0, 0]
+        self.origin = r_cube[0, 0, 0, :]
+        self.dx = r_cube[1, 0, 0, 0] - r_cube[0, 0, 0, 0]
 
         self.N = r_cube.shape[1]
         self.L = self.N * self.dx
 
-        grid = np.arange(self.N) * self.dx + self.origin[0]
+        grid = self.origin[..., 0] + np.arange(self.N + 1) * self.dx
 
-        # interpolated cube
+        # Add periodic endpoint to each axis [-N dx, (N-1)dx] -> [-Ndx, Ndx]
+        B_periodic = B_cube
+        B_periodic = np.concatenate(
+            [B_periodic, B_periodic[:1, :, :, :]], axis=0
+        )
+        B_periodic = np.concatenate(
+            [B_periodic, B_periodic[:, :1, :, :]], axis=1
+        )
+        B_periodic = np.concatenate(
+            [B_periodic, B_periodic[:, :, :1, :]], axis=2
+        )
+
         self.interp = [
             RegularGridInterpolator(
                 (grid, grid, grid),
-                B_cube[i],
+                B_periodic[..., i],
                 method="linear",
-                bounds_error=False,
-                fill_value=None,
+                bounds_error=True,
             )
             for i in range(3)
         ]
@@ -42,17 +53,20 @@ class PeriodicInterpolator:
     
     
 def rk4_step(x, ds, interp):
-    """
-    Vectorized realization of the classic Runge-Kutta (RK4) step
+    """ Vectorized realization of the classic Runge-Kutta (RK4) step
     https://en.wikipedia.org/wiki/Runge%E2%80%93Kutta_methods#The_Runge%E2%80%93Kutta_method
-    
-    :param x: (nvec, shape) current integration step
-    :param ds: (float)
-    :param interp: (callable) interpolated cube
-    :return: (nvec, shape) next integration step
-    """
+
+    Arguments:
+        x -- (nvec, shape) current integration step
+        ds -- (float), integration step
+        interp -- (callable) interpolated cube description_
+        
+    Returns:
+        (nvec, shape) next integration step
+    """    
     
     def norm(t):
+        """Vector norm keeping dimensions"""
         return np.linalg.norm(t, axis=1, keepdims=True)
     
     k1 = interp(x)
@@ -84,12 +98,15 @@ def integrate_lines(interp, M, n_steps, ds):
 
     lines = np.empty((2 * n_steps + 1, M, 3))
 
+    # set the central point
     lines[n_steps] = x
 
+    # integrate forward
     for i in range(n_steps, 2 * n_steps):
         x = rk4_step(x, ds, interp)
         lines[i + 1] = x
     
+    # integrate backward
     x = lines[n_steps]
     for i in range(n_steps, 0, -1):
         x = rk4_step(x, -ds, interp)
@@ -160,4 +177,9 @@ def plot_field_lines(lines, n_lines=20, box_size=None):
     ax.set_zlabel("z")
 
     ax.set_box_aspect([1, 1, 1])
+    return
+
+
+if __name__ == "__main__":
+    print("Nor for direct use.")
     
